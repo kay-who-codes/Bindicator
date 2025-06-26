@@ -612,281 +612,393 @@
             }
         };
 
-        const schedules = {
-            hamilton: {
-                day: 'Monday',
-                weeks: [
-                    { date: 'Monday 23 June', dateObj: new Date(2025, 5, 23, 7, 0), bins: ['black'] },
-                    { date: 'Monday 30 June', dateObj: new Date(2025, 5, 30, 7, 0), bins: ['blue', 'burgundy'] },
-                    { date: 'Monday 7 July', dateObj: new Date(2025, 6, 7, 7, 0), bins: ['black'] },
-                    { date: 'Monday 14 July', dateObj: new Date(2025, 6, 14, 7, 0), bins: ['grey', 'burgundy'] }
-                ]
-            },
-            eastkilbride: {
-                day: 'Wednesday',
-                weeks: [
-                    { date: 'Wednesday 25 June', dateObj: new Date(2025, 5, 25, 7, 0), bins: ['grey', 'burgundy'] },
-                    { date: 'Wednesday 2 July', dateObj: new Date(2025, 6, 2, 7, 0), bins: ['black'] },
-                    { date: 'Wednesday 9 July', dateObj: new Date(2025, 6, 9, 7, 0), bins: ['blue', 'burgundy'] },
-                    { date: 'Wednesday 16 July', dateObj: new Date(2025, 6, 16, 7, 0), bins: ['black'] }
-                ]
-            }
-        };
+// Collection patterns for each area
+const collectionPatterns = {
+    hamilton: {
+        day: 1, // Monday (0 = Sunday, 1 = Monday, etc.)
+        dayName: 'Monday',
+        startDate: new Date(2025, 5, 23), // Monday 23 June 2025
+        pattern: [
+            ['black'],           // Week 1
+            ['blue', 'burgundy'], // Week 2
+            ['black'],           // Week 3
+            ['grey', 'burgundy'] // Week 4
+        ]
+    },
+    eastkilbride: {
+        day: 3, // Wednesday
+        dayName: 'Wednesday', 
+        startDate: new Date(2025, 5, 25), // Wednesday 25 June 2025
+        pattern: [
+            ['grey', 'burgundy'], // Week 1
+            ['black'],           // Week 2
+            ['blue', 'burgundy'], // Week 3
+            ['black']            // Week 4
+        ]
+    }
+};
 
-        let currentArea = '';
-        let countdownInterval = null;
+let currentArea = '';
+let countdownInterval = null;
 
-        function createBinSVG(binType) {
-            const color = binData[binType].color;
-            return `
-                <svg viewBox="0 0 100 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect x="15" y="25" width="70" height="85" rx="5" fill="${color}" stroke="#fff" stroke-width="2"/>
-                    <rect x="10" y="20" width="80" height="10" rx="5" fill="${color}" stroke="#fff" stroke-width="2"/>
-                    <rect x="20" y="15" width="60" height="8" rx="4" fill="${color}" stroke="#fff" stroke-width="2"/>
-                    <rect x="30" y="5" width="40" height="12" rx="6" fill="${color}" stroke="#fff" stroke-width="2"/>
-                </svg>
-            `;
+function getNextCollectionDate(startDate, targetDay) {
+    const date = new Date(startDate);
+    const dayDiff = (targetDay - date.getDay() + 7) % 7;
+    if (dayDiff === 0 && date.getTime() < Date.now()) {
+        date.setDate(date.getDate() + 7);
+    } else {
+        date.setDate(date.getDate() + dayDiff);
+    }
+    return date;
+}
+
+// Helper function to check if two dates are in the same week
+function isSameWeek(date1, date2) {
+    // Get the start of the week (Monday) for both dates
+    const startOfWeek1 = new Date(date1);
+    startOfWeek1.setDate(date1.getDate() - (date1.getDay() + 6) % 7);
+    startOfWeek1.setHours(0, 0, 0, 0);
+    
+    const startOfWeek2 = new Date(date2);
+    startOfWeek2.setDate(date2.getDate() - (date2.getDay() + 6) % 7);
+    startOfWeek2.setHours(0, 0, 0, 0);
+    
+    return startOfWeek1.getTime() === startOfWeek2.getTime();
+}
+
+function generateCollectionSchedule(area, weeksToGenerate = 12) {
+    const pattern = collectionPatterns[area];
+    const schedule = [];
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    // Find Monday of current week
+    const startOfCurrentWeek = new Date(today);
+    startOfCurrentWeek.setDate(today.getDate() - (today.getDay() + 6) % 7);
+    startOfCurrentWeek.setHours(0,0,0,0);
+
+    // Calculate collection date for current week
+    const collectionDayInWeek = pattern.day === 0 ? 6 : pattern.day - 1;
+    let currentWeekCollectionDate = new Date(startOfCurrentWeek);
+    currentWeekCollectionDate.setDate(startOfCurrentWeek.getDate() + collectionDayInWeek);
+
+    // Validate if collection date is after pattern start
+    if (currentWeekCollectionDate < pattern.startDate) {
+        currentWeekCollectionDate = null;
+    }
+
+    let patternIndex;
+    let startDateForSchedule;
+
+    if (currentWeekCollectionDate) {
+        // Use current week's collection date
+        const weeksSinceStart = Math.floor((currentWeekCollectionDate - pattern.startDate) / (7 * 24 * 60 * 60 * 1000));
+        patternIndex = weeksSinceStart % pattern.pattern.length;
+        startDateForSchedule = currentWeekCollectionDate;
+    } else {
+        // Get next collection if no current week collection
+        startDateForSchedule = getNextCollectionDate(pattern.startDate, pattern.day);
+        const weeksSinceStart = Math.floor((startDateForSchedule - pattern.startDate) / (7 * 24 * 60 * 60 * 1000));
+        patternIndex = weeksSinceStart % pattern.pattern.length;
+    }
+
+    // Generate schedule
+    for (let i = 0; i < weeksToGenerate; i++) {
+        const collectionDateTime = new Date(startDateForSchedule);
+        collectionDateTime.setHours(7, 0, 0, 0);
+        
+        const dateStr = startDateForSchedule.toLocaleDateString('en-GB', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long'
+        });
+        
+        const isCurrentWeek = isSameWeek(now, startDateForSchedule);
+        
+        schedule.push({
+            date: dateStr,
+            dateObj: collectionDateTime,
+            bins: [...pattern.pattern[patternIndex]],
+            isCurrentWeek: isCurrentWeek
+        });
+        
+        // Move to next week
+        const nextDate = new Date(startDateForSchedule);
+        nextDate.setDate(startDateForSchedule.getDate() + 7);
+        startDateForSchedule = nextDate;
+        patternIndex = (patternIndex + 1) % pattern.pattern.length;
+    }
+    
+    return {
+        day: pattern.dayName,
+        weeks: schedule
+    };
+}
+
+function createBinSVG(binType) {
+    const color = binData[binType].color;
+    return `
+        <svg viewBox="0 0 100 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="15" y="25" width="70" height="85" rx="5" fill="${color}" stroke="#fff" stroke-width="2"/>
+            <rect x="10" y="20" width="80" height="10" rx="5" fill="${color}" stroke="#fff" stroke-width="2"/>
+            <rect x="20" y="15" width="60" height="8" rx="4" fill="${color}" stroke="#fff" stroke-width="2"/>
+            <rect x="30" y="5" width="40" height="12" rx="6" fill="${color}" stroke="#fff" stroke-width="2"/>
+        </svg>
+    `;
+}
+
+function formatCountdown(targetDate) {
+    const now = new Date();
+    const collectionStartTime = new Date(targetDate);
+    const collectionEndTime = new Date(targetDate.getTime() + (12 * 60 * 60 * 1000)); // Collection window: 7 AM to 7 PM
+    
+    // Check if it's currently collection day (between 7 AM and 7 PM on the collection date)
+    if (now >= collectionStartTime && now <= collectionEndTime) {
+        return { display: 'Collection Day!', expired: true };
+    }
+    
+    // If collection time has completely passed
+    if (now > collectionEndTime) {
+        return { display: 'Collection Complete', expired: true };
+    }
+    
+    // Calculate time until collection starts
+    const diff = collectionStartTime.getTime() - now.getTime();
+    
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+    
+    if (days > 0) {
+        return { display: `${days}d ${hours}h ${minutes}m`, expired: false };
+    } else if (hours > 0) {
+        return { display: `${hours}h ${minutes}m ${seconds}s`, expired: false };
+    } else {
+        return { display: `${minutes}m ${seconds}s`, expired: false };
+    }
+}
+
+function updateCountdowns() {
+    const countdownElements = document.querySelectorAll('.countdown-timer');
+    countdownElements.forEach(element => {
+        const targetDate = new Date(element.dataset.targetDate);
+        const countdown = formatCountdown(targetDate);
+        
+        element.textContent = countdown.display;
+        
+        if (countdown.expired) {
+            element.classList.add('expired');
+        } else {
+            element.classList.remove('expired');
         }
+    });
+}
 
-        function formatCountdown(targetDate) {
-            const now = new Date();
-            const collectionStartTime = new Date(targetDate);
-            const collectionEndTime = new Date(targetDate.getTime() + (12 * 60 * 60 * 1000)); // Collection window: 7 AM to 7 PM
-            
-            // Check if it's currently collection day (between 7 AM and 7 PM on the collection date)
-            if (now >= collectionStartTime && now <= collectionEndTime) {
-                return { display: 'Collection Day!', expired: true };
-            }
-            
-            // If collection time has completely passed
-            if (now > collectionEndTime) {
-                return { display: 'Collection Complete', expired: true };
-            }
-            
-            // Calculate time until collection starts
-            const diff = collectionStartTime.getTime() - now.getTime();
-            
-            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-            const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-            const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-            
-            if (days > 0) {
-                return { display: `${days}d ${hours}h ${minutes}m`, expired: false };
-            } else if (hours > 0) {
-                return { display: `${hours}h ${minutes}m ${seconds}s`, expired: false };
-            } else {
-                return { display: `${minutes}m ${seconds}s`, expired: false };
-            }
-        }
+function startCountdownTimer() {
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+    }
+    
+    updateCountdowns();
+    countdownInterval = setInterval(updateCountdowns, 1000);
+}
 
-        function updateCountdowns() {
-            const countdownElements = document.querySelectorAll('.countdown-timer');
-            countdownElements.forEach(element => {
-                const targetDate = new Date(element.dataset.targetDate);
-                const countdown = formatCountdown(targetDate);
-                
-                element.textContent = countdown.display;
-                
-                if (countdown.expired) {
-                    element.classList.add('expired');
-                } else {
-                    element.classList.remove('expired');
-                }
-            });
-        }
+function stopCountdownTimer() {
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+    }
+}
 
-        function startCountdownTimer() {
-            if (countdownInterval) {
-                clearInterval(countdownInterval);
-            }
+function createBinCard(binType, dateString, targetDate, isLarge = false) {
+    const cardClass = isLarge ? 'bin-card large' : 'bin-card';
+    const countdown = formatCountdown(targetDate);
+    
+    return `
+        <div class="bin-svg">${createBinSVG(binType)}</div>
+        <div class="bin-info">
+            <h3>${binData[binType].name}</h3>
+            <p>${dateString}</p>
+            <div class="countdown-timer ${countdown.expired ? 'expired' : ''}" data-target-date="${targetDate.toISOString()}">
+                ${countdown.display}
+            </div>
+        </div>
+    `;
+}
+
+function selectArea(area) {
+    currentArea = area;
+    document.getElementById('areaSelection').style.display = 'none';
+    document.getElementById('scheduleContainer').classList.add('active');
+    loadSchedule(area);
+}
+
+function goBack() {
+    stopCountdownTimer();
+    document.getElementById('scheduleContainer').classList.remove('active');
+    document.getElementById('areaSelection').style.display = 'block';
+}
+
+function loadSchedule(area) {
+    const schedule = generateCollectionSchedule(area);
+    
+    if (schedule.weeks.length === 0) {
+        console.error('No collection schedule generated');
+        return;
+    }
+    
+    // Find the current week's collection (if any)
+    const currentWeekCollection = schedule.weeks.find(item => item.isCurrentWeek);
+    const upcomingCollections = schedule.weeks.filter(item => !item.isCurrentWeek);
+    
+    // Load current bin(s)
+    const currentBinContainer = document.getElementById('currentBinContainer');
+    currentBinContainer.innerHTML = '';
+    
+    if (currentWeekCollection) {
+        if (currentWeekCollection.bins.length === 1) {
+            // Single bin - full width
+            const binCard = document.createElement('div');
+            binCard.className = 'bin-card large';
+            binCard.onclick = () => showBinInfo(currentWeekCollection.bins[0]);
+            binCard.innerHTML = createBinCard(currentWeekCollection.bins[0], currentWeekCollection.date, currentWeekCollection.dateObj, true);
+            currentBinContainer.appendChild(binCard);
+        } else {
+            // Multiple bins - side by side
+            const binRow = document.createElement('div');
+            binRow.className = 'current-bin-row';
             
-            updateCountdowns();
-            countdownInterval = setInterval(updateCountdowns, 1000);
-        }
-
-        function stopCountdownTimer() {
-            if (countdownInterval) {
-                clearInterval(countdownInterval);
-                countdownInterval = null;
-            }
-        }
-
-        function createBinCard(binType, dateString, targetDate, isLarge = false) {
-            const cardClass = isLarge ? 'bin-card large' : 'bin-card';
-            const countdown = formatCountdown(targetDate);
-            
-            return `
-                <div class="bin-svg">${createBinSVG(binType)}</div>
-                <div class="bin-info">
-                    <h3>${binData[binType].name}</h3>
-                    <p>${dateString}</p>
-                    <div class="countdown-timer ${countdown.expired ? 'expired' : ''}" data-target-date="${targetDate.toISOString()}">
-                        ${countdown.display}
-                    </div>
-                </div>
-            `;
-        }
-
-        function selectArea(area) {
-            currentArea = area;
-            document.getElementById('areaSelection').style.display = 'none';
-            document.getElementById('scheduleContainer').classList.add('active');
-            loadSchedule(area);
-        }
-
-        function goBack() {
-            stopCountdownTimer();
-            document.getElementById('scheduleContainer').classList.remove('active');
-            document.getElementById('areaSelection').style.display = 'block';
-        }
-
-        function loadSchedule(area) {
-            const schedule = schedules[area];
-            const currentWeek = schedule.weeks[0];
-            
-            // Load current bin(s)
-            const currentBinContainer = document.getElementById('currentBinContainer');
-            currentBinContainer.innerHTML = '';
-            
-            if (currentWeek.bins.length === 1) {
-                // Single bin - full width
+            currentWeekCollection.bins.forEach(binType => {
                 const binCard = document.createElement('div');
                 binCard.className = 'bin-card large';
-                binCard.onclick = () => showBinInfo(currentWeek.bins[0]);
-                binCard.innerHTML = createBinCard(currentWeek.bins[0], currentWeek.date, currentWeek.dateObj, true);
-                currentBinContainer.appendChild(binCard);
-            } else {
-                // Multiple bins - side by side
-                const binRow = document.createElement('div');
-                binRow.className = 'current-bin-row';
-                
-                currentWeek.bins.forEach(binType => {
-                    const binCard = document.createElement('div');
-                    binCard.className = 'bin-card large';
-                    binCard.onclick = () => showBinInfo(binType);
-                    binCard.innerHTML = createBinCard(binType, currentWeek.date, currentWeek.dateObj, true);
-                    binRow.appendChild(binCard);
-                });
-                
-                currentBinContainer.appendChild(binRow);
-            }
-            
-            // Load upcoming bins
-            const upcomingContainer = document.getElementById('upcomingBins');
-            upcomingContainer.innerHTML = '';
-            
-            schedule.weeks.slice(1).forEach(week => {
-                if (week.bins.length === 1) {
-                    // Single bin
-                    const binCard = document.createElement('div');
-                    binCard.className = 'bin-card';
-                    binCard.onclick = () => showBinInfo(week.bins[0]);
-                    binCard.innerHTML = createBinCard(week.bins[0], week.date, week.dateObj);
-                    upcomingContainer.appendChild(binCard);
-                } else {
-                    // Multiple bins - side by side
-                    const binRow = document.createElement('div');
-                    binRow.className = 'bin-row';
-                    
-                    week.bins.forEach(binType => {
-                        const binCard = document.createElement('div');
-                        binCard.className = 'bin-card';
-                        binCard.onclick = () => showBinInfo(binType);
-                        binCard.innerHTML = createBinCard(binType, week.date, week.dateObj);
-                        binRow.appendChild(binCard);
-                    });
-                    
-                    upcomingContainer.appendChild(binRow);
-                }
+                binCard.onclick = () => showBinInfo(binType);
+                binCard.innerHTML = createBinCard(binType, currentWeekCollection.date, currentWeekCollection.dateObj, true);
+                binRow.appendChild(binCard);
             });
             
-            // Start the countdown timer
-            startCountdownTimer();
+            currentBinContainer.appendChild(binRow);
         }
-
-        function getBinNames(bins) {
-            return bins.map(bin => binData[bin].name).join(' & ');
+    } else {
+        // No collection this week
+        currentBinContainer.innerHTML = '<div class="no-collection">No collection this week</div>';
+    }
+    
+    // Load upcoming bins
+    const upcomingContainer = document.getElementById('upcomingBins');
+    upcomingContainer.innerHTML = '';
+    
+    upcomingCollections.forEach(week => {
+        if (week.bins.length === 1) {
+            // Single bin
+            const binCard = document.createElement('div');
+            binCard.className = 'bin-card';
+            binCard.onclick = () => showBinInfo(week.bins[0]);
+            binCard.innerHTML = createBinCard(week.bins[0], week.date, week.dateObj);
+            upcomingContainer.appendChild(binCard);
+        } else {
+            // Multiple bins - side by side
+            const binRow = document.createElement('div');
+            binRow.className = 'bin-row';
+            
+            week.bins.forEach(binType => {
+                const binCard = document.createElement('div');
+                binCard.className = 'bin-card';
+                binCard.onclick = () => showBinInfo(binType);
+                binCard.innerHTML = createBinCard(binType, week.date, week.dateObj);
+                binRow.appendChild(binCard);
+            });
+            
+            upcomingContainer.appendChild(binRow);
         }
+    });
+    
+    // Start the countdown timer
+    startCountdownTimer();
+}
 
-        function showBinInfo(binType) {
-            const bin = binData[binType];
-            const modal = document.getElementById('binModal');
-            const modalTitle = document.getElementById('modalTitle');
-            const modalContent = document.getElementById('modalContent');
-            
-            modalTitle.textContent = `${bin.name} - ${bin.type}`;
-            
-            let content = '';
-            
-            if (bin.info.accepted) {
-                content += `
-                    <div class="modal-section">
-                        <h4>What Goes In:</h4>
-                        <ul>
-                            ${bin.info.accepted.map(item => `<li>${item}</li>`).join('')}
-                        </ul>
-                    </div>
-                `;
-            }
-            
-            if (bin.info.notAccepted) {
-                content += `
-                    <div class="modal-section not-accepted">
-                        <h4>What Doesn't Go In:</h4>
-                        <ul>
-                            ${bin.info.notAccepted.map(item => `<li>${item}</li>`).join('')}
-                        </ul>
-                    </div>
-                `;
-            }
-            
-            if (bin.info.notes) {
-                content += `
-                    <div class="modal-section">
-                        <h4>Important Notes:</h4>
-                        <ul>
-                            ${bin.info.notes.map(note => `<li>${note}</li>`).join('')}
-                        </ul>
-                    </div>
-                `;
-            }
-            
-            modalContent.innerHTML = content;
-            modal.classList.add('active');
-        }
+function getBinNames(bins) {
+    return bins.map(bin => binData[bin].name).join(' & ');
+}
 
-        function closeModal() {
-            document.getElementById('binModal').classList.remove('active');
-        }
+function showBinInfo(binType) {
+    const bin = binData[binType];
+    const modal = document.getElementById('binModal');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalContent = document.getElementById('modalContent');
+    
+    modalTitle.textContent = `${bin.name} - ${bin.type}`;
+    
+    let content = '';
+    
+    if (bin.info.accepted) {
+        content += `
+            <div class="modal-section">
+                <h4>What Goes In:</h4>
+                <ul>
+                    ${bin.info.accepted.map(item => `<li>${item}</li>`).join('')}
+                </ul>
+            </div>
+        `;
+    }
+    
+    if (bin.info.notAccepted) {
+        content += `
+            <div class="modal-section not-accepted">
+                <h4>What Doesn't Go In:</h4>
+                <ul>
+                    ${bin.info.notAccepted.map(item => `<li>${item}</li>`).join('')}
+                </ul>
+            </div>
+        `;
+    }
+    
+    if (bin.info.notes) {
+        content += `
+            <div class="modal-section">
+                <h4>Important Notes:</h4>
+                <ul>
+                    ${bin.info.notes.map(note => `<li>${note}</li>`).join('')}
+                </ul>
+            </div>
+        `;
+    }
+    
+    modalContent.innerHTML = content;
+    modal.classList.add('active');
+}
 
-        // Close modal when clicking outside
-        document.getElementById('binModal').addEventListener('click', (e) => {
-            if (e.target === e.currentTarget) {
-                closeModal();
-            }
-        });
+function closeModal() {
+    document.getElementById('binModal').classList.remove('active');
+}
 
-        // Handle escape key
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                closeModal();
-            }
-        });
+// Close modal when clicking outside
+document.getElementById('binModal').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) {
+        closeModal();
+    }
+});
 
-        // Clean up timer when page is hidden or closed
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden) {
-                stopCountdownTimer();
-            } else if (currentArea && document.getElementById('scheduleContainer').classList.contains('active')) {
-                startCountdownTimer();
-            }
-        });
+// Handle escape key
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closeModal();
+    }
+});
 
-        // Initialize with Hamilton
-        document.addEventListener('DOMContentLoaded', () => {
-            selectArea('hamilton');
-        });
+// Clean up timer when page is hidden or closed
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        stopCountdownTimer();
+    } else if (currentArea && document.getElementById('scheduleContainer').classList.contains('active')) {
+        startCountdownTimer();
+    }
+});
+
+// Initialize with Hamilton
+document.addEventListener('DOMContentLoaded', () => {
+    selectArea('hamilton');
+});
     </script>
 </body>
 </html>
