@@ -616,24 +616,25 @@
             hamilton: {
                 day: 'Monday',
                 weeks: [
-                    { date: 'Monday 23 June', bins: ['black'] },
-                    { date: 'Monday 30 June', bins: ['blue', 'burgundy'] },
-                    { date: 'Monday 7 July', bins: ['black'] },
-                    { date: 'Monday 14 July', bins: ['grey', 'burgundy'] }
+                    { date: 'Monday 23 June', dateObj: new Date(2025, 5, 23, 7, 0), bins: ['black'] },
+                    { date: 'Monday 30 June', dateObj: new Date(2025, 5, 30, 7, 0), bins: ['blue', 'burgundy'] },
+                    { date: 'Monday 7 July', dateObj: new Date(2025, 6, 7, 7, 0), bins: ['black'] },
+                    { date: 'Monday 14 July', dateObj: new Date(2025, 6, 14, 7, 0), bins: ['grey', 'burgundy'] }
                 ]
             },
             eastkilbride: {
                 day: 'Wednesday',
                 weeks: [
-                    { date: 'Wednesday 25 June', bins: ['grey', 'burgundy'] },
-                    { date: 'Wednesday 2 July', bins: ['black'] },
-                    { date: 'Wednesday 9 July', bins: ['blue', 'burgundy'] },
-                    { date: 'Wednesday 16 July', bins: ['black'] }
+                    { date: 'Wednesday 25 June', dateObj: new Date(2025, 5, 25, 7, 0), bins: ['grey', 'burgundy'] },
+                    { date: 'Wednesday 2 July', dateObj: new Date(2025, 6, 2, 7, 0), bins: ['black'] },
+                    { date: 'Wednesday 9 July', dateObj: new Date(2025, 6, 9, 7, 0), bins: ['blue', 'burgundy'] },
+                    { date: 'Wednesday 16 July', dateObj: new Date(2025, 6, 16, 7, 0), bins: ['black'] }
                 ]
             }
         };
 
         let currentArea = '';
+        let countdownInterval = null;
 
         function createBinSVG(binType) {
             const color = binData[binType].color;
@@ -647,6 +648,86 @@
             `;
         }
 
+        function formatCountdown(targetDate) {
+            const now = new Date();
+            const collectionStartTime = new Date(targetDate);
+            const collectionEndTime = new Date(targetDate.getTime() + (12 * 60 * 60 * 1000)); // Collection window: 7 AM to 7 PM
+            
+            // Check if it's currently collection day (between 7 AM and 7 PM on the collection date)
+            if (now >= collectionStartTime && now <= collectionEndTime) {
+                return { display: 'Collection Day!', expired: true };
+            }
+            
+            // If collection time has completely passed
+            if (now > collectionEndTime) {
+                return { display: 'Collection Complete', expired: true };
+            }
+            
+            // Calculate time until collection starts
+            const diff = collectionStartTime.getTime() - now.getTime();
+            
+            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+            
+            if (days > 0) {
+                return { display: `${days}d ${hours}h ${minutes}m`, expired: false };
+            } else if (hours > 0) {
+                return { display: `${hours}h ${minutes}m ${seconds}s`, expired: false };
+            } else {
+                return { display: `${minutes}m ${seconds}s`, expired: false };
+            }
+        }
+
+        function updateCountdowns() {
+            const countdownElements = document.querySelectorAll('.countdown-timer');
+            countdownElements.forEach(element => {
+                const targetDate = new Date(element.dataset.targetDate);
+                const countdown = formatCountdown(targetDate);
+                
+                element.textContent = countdown.display;
+                
+                if (countdown.expired) {
+                    element.classList.add('expired');
+                } else {
+                    element.classList.remove('expired');
+                }
+            });
+        }
+
+        function startCountdownTimer() {
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+            }
+            
+            updateCountdowns();
+            countdownInterval = setInterval(updateCountdowns, 1000);
+        }
+
+        function stopCountdownTimer() {
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+                countdownInterval = null;
+            }
+        }
+
+        function createBinCard(binType, dateString, targetDate, isLarge = false) {
+            const cardClass = isLarge ? 'bin-card large' : 'bin-card';
+            const countdown = formatCountdown(targetDate);
+            
+            return `
+                <div class="bin-svg">${createBinSVG(binType)}</div>
+                <div class="bin-info">
+                    <h3>${binData[binType].name}</h3>
+                    <p>${dateString}</p>
+                    <div class="countdown-timer ${countdown.expired ? 'expired' : ''}" data-target-date="${targetDate.toISOString()}">
+                        ${countdown.display}
+                    </div>
+                </div>
+            `;
+        }
+
         function selectArea(area) {
             currentArea = area;
             document.getElementById('areaSelection').style.display = 'none';
@@ -655,6 +736,7 @@
         }
 
         function goBack() {
+            stopCountdownTimer();
             document.getElementById('scheduleContainer').classList.remove('active');
             document.getElementById('areaSelection').style.display = 'block';
         }
@@ -672,13 +754,7 @@
                 const binCard = document.createElement('div');
                 binCard.className = 'bin-card large';
                 binCard.onclick = () => showBinInfo(currentWeek.bins[0]);
-                binCard.innerHTML = `
-                    <div class="bin-svg">${createBinSVG(currentWeek.bins[0])}</div>
-                    <div class="bin-info">
-                        <h3>${binData[currentWeek.bins[0]].name}</h3>
-                        <p>${currentWeek.date}</p>
-                    </div>
-                `;
+                binCard.innerHTML = createBinCard(currentWeek.bins[0], currentWeek.date, currentWeek.dateObj, true);
                 currentBinContainer.appendChild(binCard);
             } else {
                 // Multiple bins - side by side
@@ -689,13 +765,7 @@
                     const binCard = document.createElement('div');
                     binCard.className = 'bin-card large';
                     binCard.onclick = () => showBinInfo(binType);
-                    binCard.innerHTML = `
-                        <div class="bin-svg">${createBinSVG(binType)}</div>
-                        <div class="bin-info">
-                            <h3>${binData[binType].name}</h3>
-                            <p>${currentWeek.date}</p>
-                        </div>
-                    `;
+                    binCard.innerHTML = createBinCard(binType, currentWeek.date, currentWeek.dateObj, true);
                     binRow.appendChild(binCard);
                 });
                 
@@ -712,15 +782,7 @@
                     const binCard = document.createElement('div');
                     binCard.className = 'bin-card';
                     binCard.onclick = () => showBinInfo(week.bins[0]);
-                    
-                    binCard.innerHTML = `
-                        <div class="bin-svg">${createBinSVG(week.bins[0])}</div>
-                        <div class="bin-info">
-                            <h3>${binData[week.bins[0]].name}</h3>
-                            <p>${week.date}</p>
-                        </div>
-                    `;
-                    
+                    binCard.innerHTML = createBinCard(week.bins[0], week.date, week.dateObj);
                     upcomingContainer.appendChild(binCard);
                 } else {
                     // Multiple bins - side by side
@@ -731,19 +793,16 @@
                         const binCard = document.createElement('div');
                         binCard.className = 'bin-card';
                         binCard.onclick = () => showBinInfo(binType);
-                        binCard.innerHTML = `
-                            <div class="bin-svg">${createBinSVG(binType)}</div>
-                            <div class="bin-info">
-                                <h3>${binData[binType].name}</h3>
-                                <p>${week.date}</p>
-                            </div>
-                        `;
+                        binCard.innerHTML = createBinCard(binType, week.date, week.dateObj);
                         binRow.appendChild(binCard);
                     });
                     
                     upcomingContainer.appendChild(binRow);
                 }
             });
+            
+            // Start the countdown timer
+            startCountdownTimer();
         }
 
         function getBinNames(bins) {
@@ -815,7 +874,16 @@
             }
         });
 
-        // Initialize with East Kilbride
+        // Clean up timer when page is hidden or closed
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                stopCountdownTimer();
+            } else if (currentArea && document.getElementById('scheduleContainer').classList.contains('active')) {
+                startCountdownTimer();
+            }
+        });
+
+        // Initialize with Hamilton
         document.addEventListener('DOMContentLoaded', () => {
             selectArea('hamilton');
         });
